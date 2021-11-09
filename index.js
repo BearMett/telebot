@@ -9,7 +9,7 @@ const bot = new TelegramBot(telebot_token, {polling: true});
 const API_HOME = 'http://ws.bus.go.kr/api/rest'
 const getStationByName = ['/stationinfo/getStationByName', 'stSrch']
 const getBusArrivalByArsID = ['/stationinfo/getStationByUid', 'arsId']
-const getLowArrInfoByStId = '/arrive/getLowArrInfoByStId'
+const getLowArrInfoByStId = ['/arrive/getLowArrInfoByStId', 'stId']
 const getBusRouteList = '/busRouteInfo/getBusRouteList'
 
 if (conf.debug == true)
@@ -31,26 +31,39 @@ async function get_gov_api(command, payload){
     const promise = axios.get(command_send)
 
     const dataPromise = await promise.then((res) => res.data).catch(err => console.log(err))
-    console.log(dataPromise)
+    //console.log(dataPromise)
     return JSON.parse(xml2js.xml2json(dataPromise, {compact: true, spaces: 4}))
 }
 
-// async function onTest(msg, payload){
-//     var json_data
-//     json_data = await get_gov_api(getStationByName, payload).catch(err => console.log(err))
-//     if (json_data == undefined)
-//     {
-//         bot.sendMessage(msg.chat.id,'결과가 없습니다.')
-//     }
-//     else
-//     {
-//         bot.sendMessage(msg.chat.id,json_data.ServiceResult.msgBody.itemList[0].stNm._text)
-//     }
-// }
-// bot.onText(/\/(테스트) (.+)/, (msg, match) => {
-//     onTest(msg, getStationByName, match[2]).catch(err => console.log(err))
-// })
+async function get_gov_api_promise(command, payload){
+    let command_send
+    let json_obj
+    command_send = API_HOME + 
+    command[0] + '?' + encodeURIComponent('serviceKey') + conf.gov_api_token 
+    + '&' + command[1] + '=' + encodeURIComponent(payload)
+    console.log(command_send)
+    const promise = axios.get(command_send)
 
+    const dataPromise = await promise.then((res) => res.data).catch(err => console.log(err))
+    //console.log(dataPromise)
+    return dataPromise//JSON.parse(xml2js.xml2json(dataPromise, {compact: true, spaces: 4}))
+}
+
+async function wait_two_arrival(method, json_data)
+{
+    return Promise.all([
+        get_gov_api_promise(method,json_data.ServiceResult.msgBody.itemList[0].arsId._text), 
+        get_gov_api_promise(method,json_data.ServiceResult.msgBody.itemList[1].arsId._text)]
+        )
+    .then((result) => {
+        //console.log(result)
+        return result
+    })
+    .catch((error) => {
+        console.error(error)
+        return error
+    });
+}
 
 async function onStation(msg, payload){
     var json_data
@@ -61,14 +74,12 @@ async function onStation(msg, payload){
     if (json_data != undefined && json_data.ServiceResult.msgHeader.headerMsg._text != '결과가 없습니다.')
     {
         var msg_to_send
-        stn1_arrival_json = await get_gov_api(getBusArrivalByArsID,json_data.ServiceResult.msgBody.itemList[0].arsId._text)
-        stn2_arrival_json = await get_gov_api(getBusArrivalByArsID,json_data.ServiceResult.msgBody.itemList[1].arsId._text)
-
+        let data_prom = await wait_two_arrival(getBusArrivalByArsID,json_data)
+        stn1_arrival_json = JSON.parse(xml2js.xml2json(data_prom[0], {compact: true, spaces: 4}))
+        stn2_arrival_json = JSON.parse(xml2js.xml2json(data_prom[1], {compact: true, spaces: 4}))
         msg_to_send = json_data.ServiceResult.msgBody.itemList[0].stNm._text
-        console.log(stn1_arrival_json.ServiceResult.msgBody.itemList[0].arsId._text + ':' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].nxtStn._text)
-        msg_to_send = msg_to_send + '\n' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].arsId._text + '(' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].nxtStn._text + ' 방면)'
-        console.log(stn2_arrival_json.ServiceResult.msgBody.itemList[1].arsId._text + ':' + stn2_arrival_json.ServiceResult.msgBody.itemList[1].nxtStn._text)
-        msg_to_send = msg_to_send + '\n' + stn2_arrival_json.ServiceResult.msgBody.itemList[1].arsId._text + '(' + stn2_arrival_json.ServiceResult.msgBody.itemList[1].nxtStn._text + ' 방면)'
+        msg_to_send = msg_to_send + '\n' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].arsId._text + '(' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].nxtStn._text + ' 방면)' + stn1_arrival_json.ServiceResult.msgBody.itemList[0].stId._text
+        msg_to_send = msg_to_send + '\n' + stn2_arrival_json.ServiceResult.msgBody.itemList[1].arsId._text + '(' + stn2_arrival_json.ServiceResult.msgBody.itemList[1].nxtStn._text + ' 방면)' + stn1_arrival_json.ServiceResult.msgBody.itemList[1].stId._text
         bot.sendMessage(msg.chat.id, msg_to_send)
     }
     else
@@ -83,7 +94,7 @@ bot.onText(/\/(정류장|정류소) (.+)/, (msg, match) => {
 })
 
 bot.onText(/\/도착정보 (.+)/, (msg, match) => {
-    let queryParam = getLowArrInfoByStId + '?' + encodeURIComponent('serviceKey')+'=U2jgY1kbWBmo%2FCbqvulEPQ9lKWtx1HLx8wY94OmtfIM7ZCKjGAG%2BAiBEvID4BQ82x9QHacCIqZBXHoU9oOOWkQ%3D%3D'
+    let queryParam = API_HOME + getLowArrInfoByStId[0] + '?' + encodeURIComponent('serviceKey')+'=U2jgY1kbWBmo%2FCbqvulEPQ9lKWtx1HLx8wY94OmtfIM7ZCKjGAG%2BAiBEvID4BQ82x9QHacCIqZBXHoU9oOOWkQ%3D%3D'
 
     let route_end_url = queryParam + '&' + encodeURIComponent('stId') + '=' + encodeURIComponent(match[1])
     console.log(`station ${match[1]}`)
@@ -94,8 +105,6 @@ bot.onText(/\/도착정보 (.+)/, (msg, match) => {
 		let out_message = ''
         console.log(response)
         const json_obj = JSON.parse(xml2js.xml2json(response.data, {compact: true, spaces: 4}))
-        console.log('parse done!!')
-        console.log(json_obj)
         json_obj.ServiceResult.msgBody.itemList.forEach(element => {
             out_message = out_message + '\n' + element.rtNm._text + ' : ' + element.arrmsg1._text
         });
@@ -121,7 +130,6 @@ bot.onText(/\/노선 (.+)/, (msg, match) => {
 		let out_message = ''
         console.log(response)
         const json_obj = JSON.parse(xml2js.xml2json(response.data, {compact: true, spaces: 4}))
-        console.log('parse done!!')
         console.log(json_obj)
         json_obj.ServiceResult.msgBody.itemList.forEach(element => {
             out_message = out_message + '\n' + element.rtNm._text + ' : ' + element.arrmsg1._text
@@ -195,3 +203,19 @@ bot.onText(/\/echo (.+)/, (msg, match) => {
     bot.sendMessage(chatId, resp);
 })
 
+
+// async function onTest(msg, payload){
+//     var json_data
+//     json_data = await get_gov_api(getStationByName, payload).catch(err => console.log(err))
+//     if (json_data == undefined)
+//     {
+//         bot.sendMessage(msg.chat.id,'결과가 없습니다.')
+//     }
+//     else
+//     {
+//         bot.sendMessage(msg.chat.id,json_data.ServiceResult.msgBody.itemList[0].stNm._text)
+//     }
+// }
+// bot.onText(/\/(테스트) (.+)/, (msg, match) => {
+//     onTest(msg, getStationByName, match[2]).catch(err => console.log(err))
+// })
